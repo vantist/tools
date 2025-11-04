@@ -33,7 +33,7 @@ function executeGitCommand(command, args = []) {
  */
 function getStagedDiff() {
   try {
-    const diff = executeGitCommand('git diff --staged');
+    const diff = executeGitCommand('git', ['diff', '--staged']);
     if (!diff || diff.trim() === '') {
       console.log(chalk.yellow('⚠️  沒有 staged 的檔案變更，請先使用 git add 加入檔案'));
       process.exit(1);
@@ -50,7 +50,7 @@ function getStagedDiff() {
  */
 function getCurrentBranch() {
   try {
-    const branch = executeGitCommand('git branch --show-current');
+    const branch = executeGitCommand('git', ['branch', '--show-current']);
     return branch ? branch.trim() : 'main';
   } catch (error) {
     console.log(chalk.yellow(`⚠️  無法取得當前分支，使用預設值 'main'`));
@@ -63,7 +63,7 @@ function getCurrentBranch() {
  */
 function getStagedFiles() {
   try {
-    const files = executeGitCommand('git diff --staged --name-only');
+    const files = executeGitCommand('git', ['diff', '--staged', '--name-only']);
     return files ? files.trim().split('\n').filter(f => f) : [];
   } catch (error) {
     console.log(chalk.red(`✗ 無法取得檔案列表：${error.message}`));
@@ -80,7 +80,7 @@ function generateCommitSuggestions(diff, files) {
   // 分析檔案類型和變更
   const hasNewFiles = diff.includes('new file mode');
   const hasDeletedFiles = diff.includes('deleted file mode');
-  const hasModifiedFiles = !hasNewFiles && !hasDeletedFiles;
+  const hasModifiedFiles = diff.includes('diff --git') && !diff.includes('new file mode') && !diff.includes('deleted file mode');
   
   // 分析檔案類型
   const fileTypes = {
@@ -198,8 +198,8 @@ function generateBranchSuggestions(files) {
  * 驗證分支名稱格式
  */
 function isValidBranchName(branchName) {
-  // Git 分支名稱規則：不能包含空格、~、^、:、?、*、[、\、以及不能以 / 或 . 開頭
-  const invalidCharsRegex = /[\s~^:?*[\\\]]/;
+  // Git 分支名稱規則：不能包含空格、~、^、:、?、*、[、]、\、以及不能以 / 或 . 開頭
+  const invalidCharsRegex = /[\s~^:?*[\]\\]/;
   const invalidStartRegex = /^[/.]/;
   
   return !invalidCharsRegex.test(branchName) && !invalidStartRegex.test(branchName) && branchName.length > 0;
@@ -250,7 +250,7 @@ async function main() {
   
   // 檢查是否在 git repository 中
   try {
-    executeGitCommand('git rev-parse --git-dir');
+    executeGitCommand('git', ['rev-parse', '--git-dir']);
   } catch (error) {
     console.log(chalk.red('✗ 錯誤：當前目錄不是 Git repository'));
     process.exit(1);
