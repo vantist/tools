@@ -13,7 +13,9 @@ fn main() -> Result<()> {
     println!("\n{}\n", "🚀 Git 自動 Commit 工具".cyan().bold());
 
     // 檢查是否在 git repository 中
-    let repo = Repository::open(".").context("✗ 錯誤：當前目錄不是 Git repository")?;
+    // 使用當前工作目錄而非執行檔所在目錄
+    let current_dir = env::current_dir().context("無法取得當前目錄")?;
+    let repo = Repository::open(&current_dir).context("✗ 錯誤：當前目錄不是 Git repository")?;
 
     // 取得當前分支
     let current_branch = get_current_branch(&repo)?;
