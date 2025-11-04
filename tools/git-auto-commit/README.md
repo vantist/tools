@@ -5,13 +5,14 @@
 ## 功能特色
 
 - 🤖 使用 **LLM CLI** 智慧分析 `git diff --staged` 的變更內容
-- 💬 AI 生成 3 個精準的繁體中文 commit 訊息建議
+- 💬 AI 生成 3 個符合 **Conventional Commits** 規範的 commit 訊息建議（英文 type + 繁體中文描述）
 - 🌿 AI 生成 3 個符合規範的分支名稱建議
 - 🎯 互動式選單介面，方便選擇
 - ✨ 支援自訂 commit 訊息和分支名稱
 - 🎨 美觀的命令列介面（使用色彩標示）
 - 🦀 使用 Rust 開發，執行快速且安全
 - ⚙️ 支援透過設定檔自訂 LLM CLI 指令和參數
+- 📝 **支援完全自訂 commit 和分支提示詞模板**
 - 🔄 LLM 失敗時自動降級到規則式建議
 
 ## 安裝方式
@@ -93,6 +94,19 @@ model = "gemini-2.5-flash"
 
 # 額外參數（預設：["--yolo"]）
 extra_args = ["--yolo"]
+
+# Commit 訊息提示詞模板（可使用 {files} 和 {diff} 變數）
+# 預設使用 Conventional Commits 格式（type 為英文，描述為繁體中文）
+commit_prompt = '''
+你是一個 Git commit 訊息專家...
+（請參考 config.toml.example 檔案）
+'''
+
+# 分支名稱提示詞模板（可使用 {files} 和 {timestamp} 變數）
+branch_prompt = '''
+你是一個 Git 分支命名專家...
+（請參考 config.toml.example 檔案）
+'''
 ```
 
 #### 使用其他 LLM CLI
@@ -106,6 +120,47 @@ prompt_flag = "--prompt"
 model_flag = "--model"
 model = "gpt-4"
 extra_args = ["--temperature", "0.7"]
+```
+
+#### 自訂提示詞模板
+
+工具支援完全自訂 commit 訊息和分支名稱的提示詞，讓您可以：
+
+- **調整 commit 格式**：預設使用 Conventional Commits 規範（type: 描述），可自訂為其他格式
+- **變更語言風格**：預設為英文 type + 繁體中文描述，可自訂為全英文、簡體中文等
+- **添加額外要求**：例如限制長度、特定格式規則、程式碼審查重點等
+
+提示詞模板支援以下變數：
+
+**Commit 提示詞變數**：
+- `{files}` - 被修改的檔案列表
+- `{diff}` - Git diff 內容
+
+**分支提示詞變數**：
+- `{files}` - 被修改的檔案列表  
+- `{timestamp}` - 當前日期時間戳記（格式：YYYYMMDD）
+
+範例：自訂全英文 commit 訊息格式
+
+```toml
+commit_prompt = '''
+You are a Git commit message expert. Generate 3 concise commit message suggestions based on the following changes.
+
+Files:
+{files}
+
+Diff:
+```
+{diff}
+```
+
+Requirements:
+1. Use conventional commit format: type: description
+2. All in English
+3. Keep description under 50 characters
+4. Types: feat, fix, chore, docs, style, refactor, test, build, ci, perf
+5. Return only 3 suggestions, one per line
+'''
 ```
 
 ## 使用方式
