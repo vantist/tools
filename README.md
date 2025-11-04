@@ -41,9 +41,11 @@ cd tools
 腳本會：
 - 🔨 自動建置所有工具（release 版本）
 - 📁 建立 `~/bin/` 目錄（如果不存在）
-- 🔗 將所有執行檔連結至 `~/bin/`
+- 🔗 建立符號連結（symbolic links）將所有執行檔連結至 `~/bin/`
 
-**注意：** 請確保 `~/bin` 已加入 PATH 環境變數。如果尚未設定，請在 `~/.bashrc` 或 `~/.zshrc` 中加入：
+**注意：** 
+- 腳本使用符號連結，因此請保留 `target/release/` 目錄
+- 請確保 `~/bin` 已加入 PATH 環境變數。如果尚未設定，請在 `~/.bashrc` 或 `~/.zshrc` 中加入：
 
 ```bash
 export PATH="$HOME/bin:$PATH"

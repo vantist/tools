@@ -57,5 +57,5 @@ fi
 echo -e "${GREEN}✓ 所有工具已安裝至 $BIN_DIR/${NC}"
 echo ""
 echo -e "${YELLOW}提示：請確保 $BIN_DIR 已加入 PATH 環境變數${NC}"
-echo -e "如果尚未加入，請在 ~/.bashrc 或 ~/.zshrc 中加入：${NC}"
+echo -e "${YELLOW}如果尚未加入，請在 ~/.bashrc 或 ~/.zshrc 中加入：${NC}"
 echo -e "  export PATH=\"\$HOME/bin:\$PATH\""
