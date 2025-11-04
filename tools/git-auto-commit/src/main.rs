@@ -40,9 +40,12 @@ fn main() -> Result<()> {
     // 取得 diff 內容用於分析
     let diff_content = get_staged_diff(&repo)?;
 
+    // 載入設定（只載入一次）
+    let config = load_llm_config();
+
     // 生成建議
-    let branch_suggestions = generate_branch_suggestions(&staged_files);
-    let commit_suggestions = generate_commit_suggestions(&diff_content, &staged_files);
+    let branch_suggestions = generate_branch_suggestions(&staged_files, &config);
+    let commit_suggestions = generate_commit_suggestions(&diff_content, &staged_files, &config);
 
     // 詢問是否要切換分支
     let branch_choice = select_branch(&current_branch, &branch_suggestions)?;
@@ -255,9 +258,8 @@ fn load_llm_config() -> LlmConfig {
     LlmConfig::default()
 }
 
-/// 使用 Gemini CLI 生成建議
-fn call_llm_cli(prompt: &str) -> Result<String> {
-    let config = load_llm_config();
+/// 使用 LLM CLI 生成建議
+fn call_llm_cli(prompt: &str, config: &LlmConfig) -> Result<String> {
     
     // 建立指令
     let mut cmd = Command::new(&config.command);
@@ -288,10 +290,8 @@ fn call_llm_cli(prompt: &str) -> Result<String> {
 }
 
 /// 生成 commit 訊息建議（使用 LLM）
-fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
+fn generate_commit_suggestions(diff: &str, files: &[String], config: &LlmConfig) -> Vec<String> {
     println!("{}", "🤖 正在使用 LLM 生成 commit 訊息建議...".dimmed());
-    
-    let config = load_llm_config();
     
     // 限制 diff 長度以避免超過 API 限制
     let diff_preview = if diff.len() > 3000 {
@@ -307,7 +307,7 @@ fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
         .replace("{files}", &files_list)
         .replace("{diff}", diff_preview);
 
-    match call_llm_cli(&prompt) {
+    match call_llm_cli(&prompt, config) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
@@ -331,10 +331,8 @@ fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
 }
 
 /// 生成分支名稱建議（使用 LLM）
-fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
+fn generate_branch_suggestions(files: &[String], config: &LlmConfig) -> Vec<String> {
     println!("{}", "🤖 正在使用 LLM 生成分支名稱建議...".dimmed());
-    
-    let config = load_llm_config();
     let files_list = files.join(", ");
     let timestamp = Local::now().format("%Y%m%d").to_string();
     
@@ -343,7 +341,7 @@ fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
         .replace("{files}", &files_list)
         .replace("{timestamp}", &timestamp);
 
-    match call_llm_cli(&prompt) {
+    match call_llm_cli(&prompt, config) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
