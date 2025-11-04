@@ -1,4 +1,21 @@
-node_modules/
-package-lock.json
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
 *.log
+
+
+# Added by cargo
+
+/target
