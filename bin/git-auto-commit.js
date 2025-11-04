@@ -1,17 +1,30 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
+const { execSync, spawnSync } = require('child_process');
 const inquirer = require('inquirer');
 const chalk = require('chalk');
 
 /**
  * 執行 git 指令並回傳輸出
  */
-function executeGitCommand(command) {
+function executeGitCommand(command, args = []) {
   try {
-    return execSync(command, { encoding: 'utf-8' });
+    if (args.length > 0) {
+      // 使用 spawnSync 來安全地傳遞參數，避免指令注入
+      const result = spawnSync(command, args, { encoding: 'utf-8' });
+      if (result.error) {
+        throw result.error;
+      }
+      if (result.status !== 0) {
+        throw new Error(result.stderr || 'Command failed');
+      }
+      return result.stdout;
+    } else {
+      // 對於簡單的查詢指令使用 execSync
+      return execSync(command, { encoding: 'utf-8' });
+    }
   } catch (error) {
-    return null;
+    throw error;
   }
 }
 
@@ -19,28 +32,43 @@ function executeGitCommand(command) {
  * 取得當前 staged 的差異
  */
 function getStagedDiff() {
-  const diff = executeGitCommand('git diff --staged');
-  if (!diff || diff.trim() === '') {
-    console.log(chalk.yellow('⚠️  沒有 staged 的檔案變更，請先使用 git add 加入檔案'));
+  try {
+    const diff = executeGitCommand('git diff --staged');
+    if (!diff || diff.trim() === '') {
+      console.log(chalk.yellow('⚠️  沒有 staged 的檔案變更，請先使用 git add 加入檔案'));
+      process.exit(1);
+    }
+    return diff;
+  } catch (error) {
+    console.log(chalk.red(`✗ 無法取得 staged 差異：${error.message}`));
     process.exit(1);
   }
-  return diff;
 }
 
 /**
  * 取得當前分支名稱
  */
 function getCurrentBranch() {
-  const branch = executeGitCommand('git branch --show-current');
-  return branch ? branch.trim() : 'main';
+  try {
+    const branch = executeGitCommand('git branch --show-current');
+    return branch ? branch.trim() : 'main';
+  } catch (error) {
+    console.log(chalk.yellow(`⚠️  無法取得當前分支，使用預設值 'main'`));
+    return 'main';
+  }
 }
 
 /**
  * 取得 staged 的檔案列表
  */
 function getStagedFiles() {
-  const files = executeGitCommand('git diff --staged --name-only');
-  return files ? files.trim().split('\n').filter(f => f) : [];
+  try {
+    const files = executeGitCommand('git diff --staged --name-only');
+    return files ? files.trim().split('\n').filter(f => f) : [];
+  } catch (error) {
+    console.log(chalk.red(`✗ 無法取得檔案列表：${error.message}`));
+    return [];
+  }
 }
 
 /**
@@ -167,11 +195,29 @@ function generateBranchSuggestions(files) {
 }
 
 /**
+ * 驗證分支名稱格式
+ */
+function isValidBranchName(branchName) {
+  // Git 分支名稱規則：不能包含空格、~、^、:、?、*、[、\、以及不能以 / 或 . 開頭
+  const invalidCharsRegex = /[\s~^:?*[\\\]]/;
+  const invalidStartRegex = /^[/.]/;
+  
+  return !invalidCharsRegex.test(branchName) && !invalidStartRegex.test(branchName) && branchName.length > 0;
+}
+
+/**
  * 切換到新分支
  */
 function switchBranch(branchName) {
   try {
-    executeGitCommand(`git checkout -b ${branchName}`);
+    // 驗證分支名稱
+    if (!isValidBranchName(branchName)) {
+      console.log(chalk.red(`✗ 無效的分支名稱：${branchName}`));
+      return false;
+    }
+    
+    // 使用安全的方式執行指令，避免指令注入
+    executeGitCommand('git', ['checkout', '-b', branchName]);
     console.log(chalk.green(`✓ 已切換到新分支：${branchName}`));
     return true;
   } catch (error) {
@@ -185,7 +231,8 @@ function switchBranch(branchName) {
  */
 function commitChanges(message) {
   try {
-    executeGitCommand(`git commit -m "${message}"`);
+    // 使用安全的方式執行指令，避免指令注入
+    executeGitCommand('git', ['commit', '-m', message]);
     console.log(chalk.green(`✓ Commit 成功！`));
     console.log(chalk.gray(`  訊息：${message}`));
     return true;
@@ -202,8 +249,9 @@ async function main() {
   console.log(chalk.cyan.bold('\n🚀 Git 自動 Commit 工具\n'));
   
   // 檢查是否在 git repository 中
-  const isGitRepo = executeGitCommand('git rev-parse --git-dir');
-  if (!isGitRepo) {
+  try {
+    executeGitCommand('git rev-parse --git-dir');
+  } catch (error) {
     console.log(chalk.red('✗ 錯誤：當前目錄不是 Git repository'));
     process.exit(1);
   }
