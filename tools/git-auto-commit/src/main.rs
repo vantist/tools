@@ -103,12 +103,24 @@ fn get_staged_files(repo: &Repository) -> Result<Vec<String>> {
     Ok(staged_files)
 }
 
-/// 取得 staged 的 diff 內容（增強版，包含更多上下文）
+/// 取得 staged 的 diff 內容（優化版，減少 token 使用但保留關鍵資訊）
 fn get_staged_diff(_repo: &Repository) -> Result<String> {
-    // 使用 -U20 增加上下文行數（預設是 3 行，改為 20 行）
-    // 使用 --function-context 顯示完整的函數/類別上下文
+    // 優化參數說明：
+    // --inter-hunk-context=1: 減少 hunk 之間的空白行
+    // --ignore-space-change: 忽略空白變更（減少雜訊）
+    // --ignore-blank-lines: 忽略空白行變更
+    // --no-prefix: 移除 a/ 和 b/ 前綴（節省 token）
+    // --no-color: 確保沒有 ANSI 顏色碼
     let output = Command::new("git")
-        .args(&["diff", "--staged", "-U20", "--function-context"])
+        .args(&[
+            "diff",
+            "--staged",
+            "--inter-hunk-context=1",
+            "--ignore-space-change",
+            "--ignore-blank-lines",
+            "--no-prefix",
+            "--no-color"
+        ])
         .output()
         .context("無法執行 git diff")?;
 
@@ -116,7 +128,9 @@ fn get_staged_diff(_repo: &Repository) -> Result<String> {
         anyhow::bail!("git diff 執行失敗");
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let diff = String::from_utf8_lossy(&output.stdout).to_string();
+    
+    Ok(diff)
 }
 
 /// 取得檔案的簡要資訊
@@ -213,6 +227,31 @@ fn default_combined_prompt() -> String {
 {diff}
 ```
 
+Determine the best branch naming prefixes.
+
+Here are the prefixes you can choose from:
+
+- feature/: For new features (e.g., feature/add-login-page, feat/add-login-page)
+- bugfix/: For bug fixes (e.g., bugfix/fix-header-bug, fix/header-bug)
+- hotfix/: For urgent fixes (e.g., hotfix/security-patch)
+- release/: For branches preparing a release (e.g., release/v1.2.0)
+- chore/: For non-code tasks like dependency, docs updates (e.g., chore/update-dependencies)
+
+Determine the best label for the commit.
+
+Here are the labels you can choose from:
+
+- build: Changes that affect the build system or external dependencies (example scopes: gulp, broccoli, npm)
+- chore: Updating libraries, copyrights, or other repo settings, includes updating dependencies.
+- ci: Changes to our CI configuration files and scripts (example scopes: Travis, Circle, GitHub Actions)
+- docs: Non-code changes, such as fixing typos or adding new documentation (example scopes: Markdown files)
+- feat: A commit of the type feat introduces a new feature to the codebase
+- fix: A commit of the type fix patches a bug in your codebase
+- perf: A code change that improves performance
+- refactor: A code change that neither fixes a bug nor adds a feature
+- style: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc.)
+- test: Adding missing tests or correcting existing tests
+
 請按照以下格式回覆：
 
 [BRANCHES]
@@ -238,14 +277,14 @@ chore: 更新專案依賴套件
 要求：
 1. 仔細分析 diff 的完整上下文，理解變更的真實意圖
 2. [BRANCHES] 區塊包含 3 個分支名稱建議，格式為「type/description」
-   - type 使用英文：feature、fix、refactor、docs、test、chore、config
+   - type 可選：請依據 naming prefixes 選擇最合適的類型
    - description 使用英文小寫，單字之間用連字號 - 連接，不超過 30 字元
 3. [COMMITS] 區塊包含 3 個 commit 訊息建議
    - **重要**：每個 commit 訊息必須以「type:」開頭（type 為英文）
    - 第一行格式：「type: 簡短描述」，type 使用英文，描述使用繁體中文
-   - type 可選：feat、fix、chore、docs、style、refactor、test、build、ci、perf
+   - type 可選：請依據上述 labels 選擇最合適的類型
    - 描述要精確反映實際變更內容，不超過 50 字
-   - 如需補充說明，可在第二行之後使用繁體中文詳細說明（限 5 行內）
+   - 並補充說明，在第二行之後使用繁體中文詳細說明（限 5 行內）
    - **重要**：每個 commit 訊息之間必須用空行分隔
 4. 不要使用 markdown 格式，不要編號
 5. 善用函數名稱、變數名稱等上下文資訊來理解變更目的
