@@ -16,6 +16,46 @@ model = "gemini-2.5-flash"
 # 額外參數（預設：["--yolo"]）
 extra_args = ["--yolo"]
 
+# Commit 訊息提示詞模板（可使用 {files} 和 {diff} 變數）
+# 預設使用 Conventional Commits 格式，type 為英文，描述為繁體中文
+commit_prompt = '''
+你是一個 Git commit 訊息專家。請根據以下 git diff 內容和檔案列表，生成 3 個符合 Conventional Commits 規範的 commit 訊息建議。
+
+檔案列表：
+{files}
+
+Git diff：
+```
+{diff}
+```
+
+要求：
+1. 每個建議一行
+2. 第一行格式：「type: 簡短描述」，其中 type 使用英文（feat, fix, chore, docs, style, refactor, test, build, ci, perf 等），描述使用繁體中文
+3. 範例：「feat: 新增使用者登入功能」、「fix: 修正資料庫連線錯誤」、「chore: 更新專案依賴套件」
+4. 描述要簡潔明瞭，不超過 50 字
+5. 如需補充說明，在第二行之後使用繁體中文說明（限 5 行內）
+6. 只回傳 3 個建議，每個建議之間空一行分隔
+7. 不要使用 markdown 格式，不要編號
+'''
+
+# 分支名稱提示詞模板（可使用 {files} 和 {timestamp} 變數）
+branch_prompt = '''
+你是一個 Git 分支命名專家。請根據以下檔案列表，生成 3 個符合規範的分支名稱建議。
+
+檔案列表：
+{files}
+
+要求：
+1. 每個建議一行
+2. 格式：「type/description-{timestamp}」（例如：「feature/add-user-auth-{timestamp}」、「fix/login-bug-{timestamp}」）
+3. type 使用英文：feature（新功能）、fix（修復）、refactor（重構）、docs（文檔）、test（測試）、chore（維護）、config（配置）
+4. description 使用英文小寫，單字之間用連字號 - 連接
+5. 描述要簡潔，不超過 30 字元
+6. 只回傳 3 個建議，每行一個，不要有其他說明文字
+7. 不要使用 markdown 格式，不要編號
+'''
+
 # 範例：使用其他 LLM CLI
 # command = "openai"
 # prompt_flag = "--prompt"

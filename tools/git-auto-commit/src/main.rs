@@ -40,9 +40,12 @@ fn main() -> Result<()> {
     // 取得 diff 內容用於分析
     let diff_content = get_staged_diff(&repo)?;
 
+    // 載入設定（只載入一次）
+    let config = load_llm_config();
+
     // 生成建議
-    let branch_suggestions = generate_branch_suggestions(&staged_files);
-    let commit_suggestions = generate_commit_suggestions(&diff_content, &staged_files);
+    let branch_suggestions = generate_branch_suggestions(&staged_files, &config);
+    let commit_suggestions = generate_commit_suggestions(&diff_content, &staged_files, &config);
 
     // 詢問是否要切換分支
     let branch_choice = select_branch(&current_branch, &branch_suggestions)?;
@@ -142,6 +145,12 @@ struct LlmConfig {
     /// 額外參數（例如：--yolo）
     #[serde(default = "default_extra_args")]
     extra_args: Vec<String>,
+    /// Commit 訊息提示詞模板
+    #[serde(default = "default_commit_prompt")]
+    commit_prompt: String,
+    /// 分支名稱提示詞模板
+    #[serde(default = "default_branch_prompt")]
+    branch_prompt: String,
 }
 
 fn default_command() -> String {
@@ -164,6 +173,45 @@ fn default_extra_args() -> Vec<String> {
     vec!["--yolo".to_string()]
 }
 
+fn default_commit_prompt() -> String {
+    r#"你是一個 Git commit 訊息專家。請根據以下 git diff 內容和檔案列表，生成 3 個符合 Conventional Commits 規範的 commit 訊息建議。
+
+檔案列表：
+{files}
+
+Git diff：
+```
+{diff}
+```
+
+要求：
+1. 每個建議一行
+2. 第一行格式：「type: 簡短描述」，其中 type 使用英文（feat, fix, chore, docs, style, refactor, test, build, ci, perf 等），描述使用繁體中文
+3. 範例：「feat: 新增使用者登入功能」、「fix: 修正資料庫連線錯誤」、「chore: 更新專案依賴套件」
+4. 描述要簡潔明瞭，不超過 50 字
+5. 如需補充說明，在第二行之後使用繁體中文說明（限 5 行內）
+6. 只回傳 3 個建議，每個建議之間空一行分隔
+7. 不要使用 markdown 格式，不要編號"#
+        .to_string()
+}
+
+fn default_branch_prompt() -> String {
+    r#"你是一個 Git 分支命名專家。請根據以下檔案列表，生成 3 個符合規範的分支名稱建議。
+
+檔案列表：
+{files}
+
+要求：
+1. 每個建議一行
+2. 格式：「type/description-{timestamp}」（例如：「feature/add-user-auth-{timestamp}」、「fix/login-bug-{timestamp}」）
+3. type 使用英文：feature（新功能）、fix（修復）、refactor（重構）、docs（文檔）、test（測試）、chore（維護）、config（配置）
+4. description 使用英文小寫，單字之間用連字號 - 連接
+5. 描述要簡潔，不超過 30 字元
+6. 只回傳 3 個建議，每行一個，不要有其他說明文字
+7. 不要使用 markdown 格式，不要編號"#
+        .to_string()
+}
+
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
@@ -172,6 +220,8 @@ impl Default for LlmConfig {
             model_flag: default_model_flag(),
             model: default_model(),
             extra_args: default_extra_args(),
+            commit_prompt: default_commit_prompt(),
+            branch_prompt: default_branch_prompt(),
         }
     }
 }
@@ -208,9 +258,8 @@ fn load_llm_config() -> LlmConfig {
     LlmConfig::default()
 }
 
-/// 使用 Gemini CLI 生成建議
-fn call_llm_cli(prompt: &str) -> Result<String> {
-    let config = load_llm_config();
+/// 使用 LLM CLI 生成建議
+fn call_llm_cli(prompt: &str, config: &LlmConfig) -> Result<String> {
     
     // 建立指令
     let mut cmd = Command::new(&config.command);
@@ -241,7 +290,7 @@ fn call_llm_cli(prompt: &str) -> Result<String> {
 }
 
 /// 生成 commit 訊息建議（使用 LLM）
-fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
+fn generate_commit_suggestions(diff: &str, files: &[String], config: &LlmConfig) -> Vec<String> {
     println!("{}", "🤖 正在使用 LLM 生成 commit 訊息建議...".dimmed());
     
     // 限制 diff 長度以避免超過 API 限制
@@ -252,29 +301,13 @@ fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
     };
 
     let files_list = files.join(", ");
-    let prompt = format!(
-        r#"你是一個 Git commit 訊息專家。請根據以下 git diff 內容和檔案列表，生成 3 個簡潔的繁體中文 commit 訊息建議。
+    
+    // 使用可設定的提示詞模板
+    let prompt = config.commit_prompt
+        .replace("{files}", &files_list)
+        .replace("{diff}", diff_preview);
 
-檔案列表：
-{}
-
-Git diff：
-```
-{}
-```
-
-要求：
-1. 每個建議一行
-2. 使用繁體中文
-3. 格式：「類型：簡短描述」（例如：「修復：修正登入錯誤」、「新增：添加使用者管理功能」）
-4. 常用類型包括：新增、修復、更新、重構、文檔、測試、優化、配置、刪除、清理
-5. 描述要簡潔明瞭，不超過 50 字
-6. 只回傳 3 個建議，每行一個，不要有其他說明文字
-7. 不要使用 markdown 格式，不要編號"#,
-        files_list, diff_preview
-    );
-
-    match call_llm_cli(&prompt) {
+    match call_llm_cli(&prompt, config) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
@@ -298,30 +331,17 @@ Git diff：
 }
 
 /// 生成分支名稱建議（使用 LLM）
-fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
+fn generate_branch_suggestions(files: &[String], config: &LlmConfig) -> Vec<String> {
     println!("{}", "🤖 正在使用 LLM 生成分支名稱建議...".dimmed());
-    
     let files_list = files.join(", ");
     let timestamp = Local::now().format("%Y%m%d").to_string();
     
-    let prompt = format!(
-        r#"你是一個 Git 分支命名專家。請根據以下檔案列表，生成 3 個符合規範的分支名稱建議。
+    // 使用可設定的提示詞模板
+    let prompt = config.branch_prompt
+        .replace("{files}", &files_list)
+        .replace("{timestamp}", &timestamp);
 
-檔案列表：
-{}
-
-要求：
-1. 每個建議一行
-2. 格式：「類型/描述-{}」（例如：「feature/add-user-auth-{}」、「fix/login-bug-{}」）
-3. 常用類型：feature（新功能）、fix（修復）、refactor（重構）、docs（文檔）、test（測試）、chore（維護）、config（配置）
-4. 描述使用英文小寫，單字之間用連字號 - 連接
-5. 描述要簡潔，不超過 30 字元
-6. 只回傳 3 個建議，每行一個，不要有其他說明文字
-7. 不要使用 markdown 格式，不要編號"#,
-        files_list, timestamp, timestamp, timestamp
-    );
-
-    match call_llm_cli(&prompt) {
+    match call_llm_cli(&prompt, config) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
@@ -355,19 +375,19 @@ fn generate_fallback_commit_suggestions(diff: &str, files: &[String]) -> Vec<Str
     });
 
     if has_new_files {
-        suggestions.push("新增：添加新檔案".to_string());
+        suggestions.push("feat: 新增檔案".to_string());
     } else if has_deleted_files {
-        suggestions.push("刪除：移除不需要的檔案".to_string());
+        suggestions.push("chore: 移除不需要的檔案".to_string());
     } else {
-        suggestions.push("更新：更新專案檔案".to_string());
+        suggestions.push("chore: 更新專案檔案".to_string());
     }
 
     if has_code {
-        suggestions.push("修復：修正程式錯誤".to_string());
-        suggestions.push("優化：改善程式效能".to_string());
+        suggestions.push("fix: 修正程式錯誤".to_string());
+        suggestions.push("perf: 改善程式效能".to_string());
     } else {
-        suggestions.push("文檔：更新文檔內容".to_string());
-        suggestions.push("維護：日常維護更新".to_string());
+        suggestions.push("docs: 更新文檔內容".to_string());
+        suggestions.push("chore: 日常維護更新".to_string());
     }
 
     suggestions.truncate(3);
