@@ -1,28 +1,23 @@
 #!/usr/bin/env node
 
-const { execSync, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const inquirer = require('inquirer');
 const chalk = require('chalk');
 
 /**
  * 執行 git 指令並回傳輸出
+ * 使用 spawnSync 來安全地傳遞參數，避免指令注入
  */
-function executeGitCommand(command, args = []) {
+function executeGitCommand(command, args) {
   try {
-    if (args.length > 0) {
-      // 使用 spawnSync 來安全地傳遞參數，避免指令注入
-      const result = spawnSync(command, args, { encoding: 'utf-8' });
-      if (result.error) {
-        throw result.error;
-      }
-      if (result.status !== 0) {
-        throw new Error(result.stderr || 'Command failed');
-      }
-      return result.stdout;
-    } else {
-      // 對於簡單的查詢指令使用 execSync
-      return execSync(command, { encoding: 'utf-8' });
+    const result = spawnSync(command, args, { encoding: 'utf-8' });
+    if (result.error) {
+      throw result.error;
     }
+    if (result.status !== 0) {
+      throw new Error(result.stderr || 'Command failed');
+    }
+    return result.stdout;
   } catch (error) {
     throw error;
   }
