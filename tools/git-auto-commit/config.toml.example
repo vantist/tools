@@ -1,0 +1,24 @@
+# Git Auto-Commit Tool 設定檔範例
+# 將此檔案複製到 ~/.config/git-auto-commit/config.toml 以使用自訂設定
+
+# LLM CLI 指令（預設：gemini）
+command = "gemini"
+
+# 提示參數標記（預設：-p）
+prompt_flag = "-p"
+
+# 模型參數標記（預設：--model）
+model_flag = "--model"
+
+# 模型名稱（預設：gemini-2.5-flash）
+model = "gemini-2.5-flash"
+
+# 額外參數（預設：["--yolo"]）
+extra_args = ["--yolo"]
+
+# 範例：使用其他 LLM CLI
+# command = "openai"
+# prompt_flag = "--prompt"
+# model_flag = "--model"
+# model = "gpt-4"
+# extra_args = ["--temperature", "0.7"]
