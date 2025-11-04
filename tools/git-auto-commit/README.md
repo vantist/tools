@@ -60,7 +60,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 若無設定檔，工具使用以下預設值：
 
 ```bash
-gemini -p "prompt" --model "gemini-2.5-flash" --yolo
+gemini -p "prompt" --model "gemini-2.5-flash"
 ```
 
 #### 建立自訂設定檔
@@ -92,8 +92,8 @@ model_flag = "--model"
 # 模型名稱（預設：gemini-2.5-flash）
 model = "gemini-2.5-flash"
 
-# 額外參數（預設：["--yolo"]）
-extra_args = ["--yolo"]
+# 額外參數（預設：[]）
+extra_args = []
 
 # Commit 訊息提示詞模板（可使用 {files} 和 {diff} 變數）
 # 預設使用 Conventional Commits 格式（type 為英文，描述為繁體中文）
@@ -271,7 +271,7 @@ A: 使用 TOML 格式。請參考專案中的 `config.toml.example` 檔案作為
 
 ### Q: 預設指令是什麼？
 
-A: 預設執行 `gemini -p "prompt" --model "gemini-2.5-flash" --yolo`。可透過設定檔自訂所有參數。
+A: 預設執行 `gemini -p "prompt" --model "gemini-2.5-flash"`。可透過設定檔自訂所有參數。
 
 ### Q: 建議的品質如何？
 
