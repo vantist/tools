@@ -13,47 +13,61 @@ model_flag = "--model"
 # 模型名稱（預設：gemini-2.5-flash）
 model = "gemini-2.5-flash"
 
-# 額外參數（預設：["--yolo"]）
-extra_args = ["--yolo"]
+# 額外參數（預設：[]）
+extra_args = []
 
-# Commit 訊息提示詞模板（可使用 {files} 和 {diff} 變數）
-# 預設使用 Conventional Commits 格式，type 為英文，描述為繁體中文
-commit_prompt = '''
-你是一個 Git commit 訊息專家。請根據以下 git diff 內容和檔案列表，生成 3 個符合 Conventional Commits 規範的 commit 訊息建議。
+# 提示詞模板（可使用 {stats}, {file_summary}, {diff} 變數）
+# 此模板會同時生成分支名稱和 commit 訊息建議
+# 現在包含更多上下文資訊，讓 LLM 能更準確理解變更意圖
+combined_prompt = '''
+你是一個 Git 專家。請根據以下資訊，生成分支名稱和 commit 訊息建議。
 
-檔案列表：
-{files}
+變更統計：
+{stats}
 
-Git diff：
+檔案列表與類型：
+{file_summary}
+
+詳細變更（Git diff with context）：
 ```
 {diff}
 ```
 
+請按照以下格式回覆：
+
+[BRANCHES]
+feature/example-feature
+fix/example-bug
+chore/example-task
+
+[COMMITS]
+feat: 新增使用者登入功能
+
+實作完整的使用者登入流程，包含密碼驗證與 session 管理。
+
+
+fix: 修正資料庫連線錯誤
+
+修正了在高並發情況下資料庫連線池耗盡的問題。
+
+
+chore: 更新專案依賴套件
+
+更新所有依賴套件至最新穩定版本，提升安全性。
+
 要求：
-1. 每個建議一行
-2. 第一行格式：「type: 簡短描述」，其中 type 使用英文（feat, fix, chore, docs, style, refactor, test, build, ci, perf 等），描述使用繁體中文
-3. 範例：「feat: 新增使用者登入功能」、「fix: 修正資料庫連線錯誤」、「chore: 更新專案依賴套件」
-4. 描述要簡潔明瞭，不超過 50 字
-5. 如需補充說明，在第二行之後使用繁體中文說明（限 5 行內）
-6. 只回傳 3 個建議，每個建議之間空一行分隔
-7. 不要使用 markdown 格式，不要編號
-'''
-
-# 分支名稱提示詞模板（可使用 {files} 和 {timestamp} 變數）
-branch_prompt = '''
-你是一個 Git 分支命名專家。請根據以下檔案列表，生成 3 個符合規範的分支名稱建議。
-
-檔案列表：
-{files}
-
-要求：
-1. 每個建議一行
-2. 格式：「type/description-{timestamp}」（例如：「feature/add-user-auth-{timestamp}」、「fix/login-bug-{timestamp}」）
-3. type 使用英文：feature（新功能）、fix（修復）、refactor（重構）、docs（文檔）、test（測試）、chore（維護）、config（配置）
-4. description 使用英文小寫，單字之間用連字號 - 連接
-5. 描述要簡潔，不超過 30 字元
-6. 只回傳 3 個建議，每行一個，不要有其他說明文字
-7. 不要使用 markdown 格式，不要編號
+1. 仔細分析 diff 的完整上下文，理解變更的真實意圖
+2. [BRANCHES] 區塊包含 3 個分支名稱建議，格式為「type/description」
+   - type 使用英文：feature、fix、refactor、docs、test、chore、config
+   - description 使用英文小寫，單字之間用連字號 - 連接，不超過 30 字元
+3. [COMMITS] 區塊包含 3 個 commit 訊息建議
+   - 第一行格式：「type: 簡短描述」，type 使用英文，描述使用繁體中文
+   - type 可選：feat、fix、chore、docs、style、refactor、test、build、ci、perf
+   - 描述要精確反映實際變更內容，不超過 50 字
+   - 如需補充說明，第二行之後使用繁體中文詳細說明（限 5 行內）
+   - 每個建議之間用兩個空行分隔
+4. 不要使用 markdown 格式，不要編號
+5. 善用函數名稱、變數名稱等上下文資訊來理解變更目的
 '''
 
 # 範例：使用其他 LLM CLI
