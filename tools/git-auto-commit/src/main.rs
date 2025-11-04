@@ -188,7 +188,8 @@ Git diff：
 4. 描述要簡潔明瞭，不超過 50 字
 5. 如需補充說明，在第二行之後使用繁體中文說明（限 5 行內）
 6. 只回傳 3 個建議，每個建議之間空一行分隔
-7. 不要使用 markdown 格式，不要編號"#.to_string()
+7. 不要使用 markdown 格式，不要編號"#
+        .to_string()
 }
 
 fn default_branch_prompt() -> String {
@@ -204,7 +205,8 @@ fn default_branch_prompt() -> String {
 4. description 使用英文小寫，單字之間用連字號 - 連接
 5. 描述要簡潔，不超過 30 字元
 6. 只回傳 3 個建議，每行一個，不要有其他說明文字
-7. 不要使用 markdown 格式，不要編號"#.to_string()
+7. 不要使用 markdown 格式，不要編號"#
+        .to_string()
 }
 
 impl Default for LlmConfig {
