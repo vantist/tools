@@ -29,6 +29,8 @@
 
 使用自動建置與安裝腳本，一鍵安裝所有工具到 `~/bin/`：
 
+#### macOS / Linux
+
 ```bash
 # 克隆專案
 git clone https://github.com/vantist/tools.git
@@ -39,17 +41,52 @@ cd tools
 ```
 
 腳本會：
+
 - 🔨 自動建置所有工具（release 版本）
 - 📁 建立 `~/bin/` 目錄（如果不存在）
 - 🔗 建立符號連結（symbolic links）將所有執行檔連結至 `~/bin/`
 
-**注意：** 
+**注意：**
+
 - 腳本使用符號連結，因此請保留 `target/release/` 目錄
 - 請確保 `~/bin` 已加入 PATH 環境變數。如果尚未設定，請在 `~/.bashrc` 或 `~/.zshrc` 中加入：
 
 ```bash
 export PATH="$HOME/bin:$PATH"
 ```
+
+#### Windows
+
+```powershell
+# 克隆專案
+git clone https://github.com/vantist/tools.git
+cd tools
+
+# 建置並安裝所有工具
+.\build-and-install.ps1
+```
+
+腳本會：
+
+- 🔨 自動建置所有工具（release 版本）
+- 📁 建立 `%USERPROFILE%\bin\` 目錄（如果不存在）
+- 📋 複製所有執行檔（.exe）至 `%USERPROFILE%\bin\`
+
+**注意：**
+
+- 請確保 `%USERPROFILE%\bin` 已加入 PATH 環境變數
+- 可以透過以下 PowerShell 命令新增到使用者環境變數：
+
+```powershell
+$env:Path += ";$env:USERPROFILE\bin"
+[Environment]::SetEnvironmentVariable("Path", $env:Path, [System.EnvironmentVariableTarget]::User)
+```
+
+或手動設定：
+
+1. 開啟「系統內容」→「進階系統設定」→「環境變數」
+2. 在「使用者變數」中編輯 `Path`
+3. 新增：`%USERPROFILE%\bin`
 
 ### 從原始碼編譯
 
@@ -78,7 +115,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ## 專案結構
 
-```
+```text
 tools/
 ├── Cargo.toml              # Workspace 設定檔
 ├── tools/
