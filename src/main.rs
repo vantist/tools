@@ -3,6 +3,8 @@ use chrono::Local;
 use colored::*;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use git2::{Repository, StatusOptions};
+use serde::{Deserialize, Serialize};
+use std::env;
 use std::process::Command;
 
 fn main() -> Result<()> {
@@ -120,151 +122,229 @@ fn get_staged_diff(_repo: &Repository) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// 生成 commit 訊息建議
-fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
-    let mut suggestions = Vec::new();
+/// Gemini API 請求結構
+#[derive(Serialize)]
+struct GeminiRequest {
+    contents: Vec<GeminiContent>,
+}
 
-    // 分析檔案類型和變更
-    let has_new_files = diff.contains("new file mode");
-    let has_deleted_files = diff.contains("deleted file mode");
-    let has_modified_files = diff.contains("diff --git") && !has_new_files && !has_deleted_files;
+#[derive(Serialize)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
 
-    // 分析檔案類型
-    let has_docs = files
-        .iter()
-        .any(|f| f.ends_with(".md") || f.ends_with(".txt") || f.ends_with(".doc"));
-    let has_config = files.iter().any(|f| {
-        f.ends_with(".json")
-            || f.ends_with(".yaml")
-            || f.ends_with(".yml")
-            || f.ends_with(".toml")
-            || f.ends_with(".ini")
-    });
-    let has_code = files.iter().any(|f| {
-        f.ends_with(".rs")
-            || f.ends_with(".js")
-            || f.ends_with(".ts")
-            || f.ends_with(".py")
-            || f.ends_with(".java")
-            || f.ends_with(".go")
-    });
-    let has_tests = files.iter().any(|f| f.contains("test") || f.contains("spec"));
+#[derive(Serialize)]
+struct GeminiPart {
+    text: String,
+}
 
-    // 根據變更類型生成建議
-    if has_new_files {
-        if files.len() == 1 {
-            suggestions.push(format!("新增：添加 {}", files[0]));
-        } else {
-            suggestions.push("新增：添加新檔案".to_string());
-        }
-        if has_docs {
-            suggestions.push("文檔：新增專案文檔".to_string());
-        } else if has_config {
-            suggestions.push("配置：新增設定檔".to_string());
-        } else if has_code {
-            suggestions.push("功能：新增功能模組".to_string());
-        }
-    } else if has_deleted_files {
-        if files.len() == 1 {
-            suggestions.push(format!("刪除：移除 {}", files[0]));
-        } else {
-            suggestions.push("刪除：移除不需要的檔案".to_string());
-        }
-        suggestions.push("清理：清理過時的程式碼".to_string());
-        suggestions.push("重構：移除冗餘檔案".to_string());
-    } else if has_modified_files {
-        if has_docs {
-            suggestions.push("文檔：更新專案說明文件".to_string());
-            suggestions.push("文檔：修正文檔內容".to_string());
-        } else if has_config {
-            suggestions.push("配置：調整專案設定".to_string());
-            suggestions.push("配置：更新設定檔".to_string());
-        } else if has_tests {
-            suggestions.push("測試：更新測試案例".to_string());
-            suggestions.push("測試：修正測試程式".to_string());
-        } else if has_code {
-            suggestions.push("修復：修正程式錯誤".to_string());
-            suggestions.push("優化：改善程式效能".to_string());
-            suggestions.push("重構：重構程式碼結構".to_string());
+/// Gemini API 回應結構
+#[derive(Deserialize)]
+struct GeminiResponse {
+    candidates: Vec<GeminiCandidate>,
+}
+
+#[derive(Deserialize)]
+struct GeminiCandidate {
+    content: GeminiResponseContent,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponseContent {
+    parts: Vec<GeminiResponsePart>,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponsePart {
+    text: String,
+}
+
+/// 使用 Gemini LLM 生成建議
+fn call_gemini_api(prompt: &str) -> Result<String> {
+    let api_key = env::var("GEMINI_API_KEY")
+        .context("請設定 GEMINI_API_KEY 環境變數。可從 https://makersuite.google.com/app/apikey 取得")?;
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={}",
+        api_key
+    );
+
+    let request = GeminiRequest {
+        contents: vec![GeminiContent {
+            parts: vec![GeminiPart {
+                text: prompt.to_string(),
+            }],
+        }],
+    };
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .post(&url)
+        .json(&request)
+        .send()
+        .context("無法連接到 Gemini API")?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+        anyhow::bail!("Gemini API 錯誤：{}", error_text);
+    }
+
+    let gemini_response: GeminiResponse = response
+        .json()
+        .context("無法解析 Gemini API 回應")?;
+
+    if let Some(candidate) = gemini_response.candidates.first() {
+        if let Some(part) = candidate.content.parts.first() {
+            return Ok(part.text.clone());
         }
     }
 
-    // 通用建議
-    let generic = vec![
-        "更新：更新專案檔案",
-        "改進：改善程式碼品質",
-        "維護：日常維護更新",
-        "調整：調整檔案內容",
-        "修改：修改專案檔案",
-    ];
+    anyhow::bail!("Gemini API 沒有返回有效的回應")
+}
 
-    for suggestion in generic {
-        if suggestions.len() >= 3 {
-            break;
+/// 生成 commit 訊息建議（使用 LLM）
+fn generate_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
+    println!("{}", "🤖 正在使用 LLM 生成 commit 訊息建議...".dimmed());
+    
+    // 限制 diff 長度以避免超過 API 限制
+    let diff_preview = if diff.len() > 3000 {
+        &diff[..3000]
+    } else {
+        diff
+    };
+
+    let files_list = files.join(", ");
+    let prompt = format!(
+        r#"你是一個 Git commit 訊息專家。請根據以下 git diff 內容和檔案列表，生成 3 個簡潔的繁體中文 commit 訊息建議。
+
+檔案列表：
+{}
+
+Git diff：
+```
+{}
+```
+
+要求：
+1. 每個建議一行
+2. 使用繁體中文
+3. 格式：「類型：簡短描述」（例如：「修復：修正登入錯誤」、「新增：添加使用者管理功能」）
+4. 常用類型包括：新增、修復、更新、重構、文檔、測試、優化、配置、刪除、清理
+5. 描述要簡潔明瞭，不超過 50 字
+6. 只回傳 3 個建議，每行一個，不要有其他說明文字
+7. 不要使用 markdown 格式，不要編號"#,
+        files_list, diff_preview
+    );
+
+    match call_gemini_api(&prompt) {
+        Ok(response) => {
+            let suggestions: Vec<String> = response
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+                .take(3)
+                .collect();
+
+            if suggestions.len() == 3 {
+                return suggestions;
+            }
         }
-        let s = suggestion.to_string();
-        if !suggestions.contains(&s) {
-            suggestions.push(s);
+        Err(e) => {
+            println!("{}", format!("⚠️  LLM 生成失敗：{}", e).yellow());
+            println!("{}", "使用備用建議...".dimmed());
         }
+    }
+
+    // 備用建議（如果 LLM 失敗）
+    generate_fallback_commit_suggestions(diff, files)
+}
+
+/// 生成分支名稱建議（使用 LLM）
+fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
+    println!("{}", "🤖 正在使用 LLM 生成分支名稱建議...".dimmed());
+    
+    let files_list = files.join(", ");
+    let timestamp = Local::now().format("%Y%m%d").to_string();
+    
+    let prompt = format!(
+        r#"你是一個 Git 分支命名專家。請根據以下檔案列表，生成 3 個符合規範的分支名稱建議。
+
+檔案列表：
+{}
+
+要求：
+1. 每個建議一行
+2. 格式：「類型/描述-{}」（例如：「feature/add-user-auth-{}」、「fix/login-bug-{}」）
+3. 常用類型：feature（新功能）、fix（修復）、refactor（重構）、docs（文檔）、test（測試）、chore（維護）、config（配置）
+4. 描述使用英文小寫，單字之間用連字號 - 連接
+5. 描述要簡潔，不超過 30 字元
+6. 只回傳 3 個建議，每行一個，不要有其他說明文字
+7. 不要使用 markdown 格式，不要編號"#,
+        files_list, timestamp, timestamp, timestamp
+    );
+
+    match call_gemini_api(&prompt) {
+        Ok(response) => {
+            let suggestions: Vec<String> = response
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+                .take(3)
+                .collect();
+
+            if suggestions.len() == 3 {
+                return suggestions;
+            }
+        }
+        Err(e) => {
+            println!("{}", format!("⚠️  LLM 生成失敗：{}", e).yellow());
+            println!("{}", "使用備用建議...".dimmed());
+        }
+    }
+
+    // 備用建議（如果 LLM 失敗）
+    generate_fallback_branch_suggestions(files)
+}
+
+/// 備用 commit 訊息建議（當 LLM 不可用時）
+fn generate_fallback_commit_suggestions(diff: &str, files: &[String]) -> Vec<String> {
+    let mut suggestions = Vec::new();
+
+    let has_new_files = diff.contains("new file mode");
+    let has_deleted_files = diff.contains("deleted file mode");
+    let has_code = files.iter().any(|f| {
+        f.ends_with(".rs") || f.ends_with(".js") || f.ends_with(".py")
+    });
+
+    if has_new_files {
+        suggestions.push("新增：添加新檔案".to_string());
+    } else if has_deleted_files {
+        suggestions.push("刪除：移除不需要的檔案".to_string());
+    } else {
+        suggestions.push("更新：更新專案檔案".to_string());
+    }
+
+    if has_code {
+        suggestions.push("修復：修正程式錯誤".to_string());
+        suggestions.push("優化：改善程式效能".to_string());
+    } else {
+        suggestions.push("文檔：更新文檔內容".to_string());
+        suggestions.push("維護：日常維護更新".to_string());
     }
 
     suggestions.truncate(3);
     suggestions
 }
 
-/// 生成分支名稱建議
-fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
-    let mut suggestions = Vec::new();
+/// 備用分支名稱建議（當 LLM 不可用時）
+fn generate_fallback_branch_suggestions(_files: &[String]) -> Vec<String> {
     let timestamp = Local::now().format("%Y%m%d").to_string();
-
-    // 分析檔案類型
-    let has_feature = files.iter().any(|f| f.contains("feature") || f.contains("add"));
-    let has_fix = files.iter().any(|f| f.contains("fix") || f.contains("bug"));
-    let has_docs = files
-        .iter()
-        .any(|f| f.ends_with(".md") || f.ends_with(".txt"));
-    let has_config = files.iter().any(|f| {
-        f.ends_with(".json")
-            || f.ends_with(".yaml")
-            || f.ends_with(".yml")
-            || f.ends_with(".toml")
-    });
-    let has_test = files.iter().any(|f| f.contains("test") || f.contains("spec"));
-
-    if has_feature {
-        suggestions.push(format!("feature/new-feature-{}", timestamp));
-    }
-    if has_fix {
-        suggestions.push(format!("fix/bug-fix-{}", timestamp));
-    }
-    if has_docs {
-        suggestions.push(format!("docs/update-docs-{}", timestamp));
-    }
-    if has_config {
-        suggestions.push(format!("config/update-config-{}", timestamp));
-    }
-    if has_test {
-        suggestions.push(format!("test/update-tests-{}", timestamp));
-    }
-
-    // 通用建議
-    let generic = vec![
+    
+    vec![
         format!("feature/update-{}", timestamp),
-        format!("refactor/improve-code-{}", timestamp),
-        format!("chore/maintenance-{}", timestamp),
-    ];
-
-    for suggestion in generic {
-        if suggestions.len() >= 3 {
-            break;
-        }
-        if !suggestions.contains(&suggestion) {
-            suggestions.push(suggestion);
-        }
-    }
-
-    suggestions.truncate(3);
-    suggestions
+        format!("fix/bug-fix-{}", timestamp),
+        format!("refactor/improve-{}", timestamp),
+    ]
 }
 
 /// 選擇分支
