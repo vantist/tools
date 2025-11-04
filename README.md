@@ -25,6 +25,30 @@
 
 ## 安裝方式
 
+### 快速安裝（推薦）
+
+使用自動建置與安裝腳本，一鍵安裝所有工具到 `~/bin/`：
+
+```bash
+# 克隆專案
+git clone https://github.com/vantist/tools.git
+cd tools
+
+# 建置並安裝所有工具
+./build-and-install.sh
+```
+
+腳本會：
+- 🔨 自動建置所有工具（release 版本）
+- 📁 建立 `~/bin/` 目錄（如果不存在）
+- 🔗 將所有執行檔連結至 `~/bin/`
+
+**注意：** 請確保 `~/bin` 已加入 PATH 環境變數。如果尚未設定，請在 `~/.bashrc` 或 `~/.zshrc` 中加入：
+
+```bash
+export PATH="$HOME/bin:$PATH"
+```
+
 ### 從原始碼編譯
 
 ```bash
