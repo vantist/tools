@@ -5,6 +5,8 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use git2::{Repository, StatusOptions};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> Result<()> {
@@ -122,84 +124,120 @@ fn get_staged_diff(_repo: &Repository) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Gemini API 請求結構
-#[derive(Serialize)]
-struct GeminiRequest {
-    contents: Vec<GeminiContent>,
+/// LLM CLI 設定
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct LlmConfig {
+    /// LLM CLI 指令（例如：gemini）
+    #[serde(default = "default_command")]
+    command: String,
+    /// 提示參數標記（例如：-p）
+    #[serde(default = "default_prompt_flag")]
+    prompt_flag: String,
+    /// 模型參數標記（例如：--model）
+    #[serde(default = "default_model_flag")]
+    model_flag: String,
+    /// 模型名稱（例如：gemini-2.5-flash）
+    #[serde(default = "default_model")]
+    model: String,
+    /// 額外參數（例如：--yolo）
+    #[serde(default = "default_extra_args")]
+    extra_args: Vec<String>,
 }
 
-#[derive(Serialize)]
-struct GeminiContent {
-    parts: Vec<GeminiPart>,
+fn default_command() -> String {
+    "gemini".to_string()
 }
 
-#[derive(Serialize)]
-struct GeminiPart {
-    text: String,
+fn default_prompt_flag() -> String {
+    "-p".to_string()
 }
 
-/// Gemini API 回應結構
-#[derive(Deserialize)]
-struct GeminiResponse {
-    candidates: Vec<GeminiCandidate>,
+fn default_model_flag() -> String {
+    "--model".to_string()
 }
 
-#[derive(Deserialize)]
-struct GeminiCandidate {
-    content: GeminiResponseContent,
+fn default_model() -> String {
+    "gemini-2.5-flash".to_string()
 }
 
-#[derive(Deserialize)]
-struct GeminiResponseContent {
-    parts: Vec<GeminiResponsePart>,
+fn default_extra_args() -> Vec<String> {
+    vec!["--yolo".to_string()]
 }
 
-#[derive(Deserialize)]
-struct GeminiResponsePart {
-    text: String,
-}
-
-/// 使用 Gemini LLM 生成建議
-fn call_gemini_api(prompt: &str) -> Result<String> {
-    let api_key = env::var("GEMINI_API_KEY")
-        .context("請設定 GEMINI_API_KEY 環境變數。可從 https://makersuite.google.com/app/apikey 取得")?;
-
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={}",
-        api_key
-    );
-
-    let request = GeminiRequest {
-        contents: vec![GeminiContent {
-            parts: vec![GeminiPart {
-                text: prompt.to_string(),
-            }],
-        }],
-    };
-
-    let client = reqwest::blocking::Client::new();
-    let response = client
-        .post(&url)
-        .json(&request)
-        .send()
-        .context("無法連接到 Gemini API")?;
-
-    if !response.status().is_success() {
-        let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-        anyhow::bail!("Gemini API 錯誤：{}", error_text);
-    }
-
-    let gemini_response: GeminiResponse = response
-        .json()
-        .context("無法解析 Gemini API 回應")?;
-
-    if let Some(candidate) = gemini_response.candidates.first() {
-        if let Some(part) = candidate.content.parts.first() {
-            return Ok(part.text.clone());
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            command: default_command(),
+            prompt_flag: default_prompt_flag(),
+            model_flag: default_model_flag(),
+            model: default_model(),
+            extra_args: default_extra_args(),
         }
     }
+}
 
-    anyhow::bail!("Gemini API 沒有返回有效的回應")
+/// 取得設定檔路徑
+fn get_config_path() -> PathBuf {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".config").join("git-auto-commit").join("config.toml")
+}
+
+/// 載入 LLM 設定
+fn load_llm_config() -> LlmConfig {
+    let config_path = get_config_path();
+    
+    if config_path.exists() {
+        match fs::read_to_string(&config_path) {
+            Ok(content) => {
+                match toml::from_str::<LlmConfig>(&content) {
+                    Ok(config) => {
+                        println!("{}", format!("📝 已載入設定檔：{}", config_path.display()).dimmed());
+                        return config;
+                    }
+                    Err(e) => {
+                        println!("{}", format!("⚠️  設定檔格式錯誤：{}，使用預設設定", e).yellow());
+                    }
+                }
+            }
+            Err(e) => {
+                println!("{}", format!("⚠️  無法讀取設定檔：{}，使用預設設定", e).yellow());
+            }
+        }
+    }
+    
+    LlmConfig::default()
+}
+
+/// 使用 Gemini CLI 生成建議
+fn call_llm_cli(prompt: &str) -> Result<String> {
+    let config = load_llm_config();
+    
+    // 建立指令
+    let mut cmd = Command::new(&config.command);
+    
+    // 添加提示參數
+    cmd.arg(&config.prompt_flag).arg(prompt);
+    
+    // 添加模型參數
+    cmd.arg(&config.model_flag).arg(&config.model);
+    
+    // 添加額外參數
+    for arg in &config.extra_args {
+        cmd.arg(arg);
+    }
+    
+    // 執行指令
+    let output = cmd
+        .output()
+        .context(format!("無法執行 {} 指令，請確認已安裝 {} CLI 工具", config.command, config.command))?;
+    
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{} 執行失敗：{}", config.command, error);
+    }
+    
+    let response = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok(response.trim().to_string())
 }
 
 /// 生成 commit 訊息建議（使用 LLM）
@@ -236,7 +274,7 @@ Git diff：
         files_list, diff_preview
     );
 
-    match call_gemini_api(&prompt) {
+    match call_llm_cli(&prompt) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
@@ -283,7 +321,7 @@ fn generate_branch_suggestions(files: &[String]) -> Vec<String> {
         files_list, timestamp, timestamp, timestamp
     );
 
-    match call_gemini_api(&prompt) {
+    match call_llm_cli(&prompt) {
         Ok(response) => {
             let suggestions: Vec<String> = response
                 .lines()
